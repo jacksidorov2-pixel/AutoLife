@@ -1,6 +1,8 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index 595009d..0b73b4d 100644
 --- a/app/build.gradle
 +++ b/app/build.gradle
-@@ -10,11 +10,24 @@
+@@ -10,11 +10,23 @@ android {
          applicationId 'com.autolife'
          minSdk 29
          targetSdk 36
@@ -8,8 +10,7 @@
 -        versionName '0.5.0'
 +        versionCode 6
 +        versionName '0.5.1'
-     }
- 
++    }
 +
 +    signingConfigs {
 +        debug {
@@ -18,8 +19,8 @@
 +            keyAlias 'autolife'
 +            keyPassword 'autolife'
 +        }
-+    }
-+
+     }
+ 
      buildTypes {
 +        debug {
 +            signingConfig signingConfigs.debug
@@ -27,9 +28,11 @@
          release {
              minifyEnabled false
              proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+diff --git a/app/src/main/java/com/autolife/MainActivity.java b/app/src/main/java/com/autolife/MainActivity.java
+index 76f231c..aa8e618 100644
 --- a/app/src/main/java/com/autolife/MainActivity.java
 +++ b/app/src/main/java/com/autolife/MainActivity.java
-@@ -136,13 +136,14 @@
+@@ -136,13 +136,14 @@ public class MainActivity extends Activity {
          getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
          getWindow().setStatusBarColor(Color.BLACK);
          getWindow().setNavigationBarColor(Color.BLACK);
@@ -45,7 +48,7 @@
          registerUsbReceiver();
          refreshTrace();
          refreshStateChips();
-@@ -570,24 +571,38 @@
+@@ -570,24 +571,35 @@ public class MainActivity extends Activity {
      }
  
      private void enterImmersive() {
