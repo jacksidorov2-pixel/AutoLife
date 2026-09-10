@@ -37,7 +37,7 @@ jobs:
           gzip -dc overrides/v0.3.patch.gz | (cd AutoLife && git apply --whitespace=nowarn -)
           grep -q "versionName '0.3.0'" AutoLife/app/build.gradle
           grep -q "PHASE 2 HU_STATISTIC_INFO" AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
-          grep -q "getString(byte\[\] data" AutoLife/app/src/main/java/com/autolife/core/ProtoLite.java
+          grep -Fq "getString(byte[] data" AutoLife/app/src/main/java/com/autolife/core/ProtoLite.java
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
