@@ -33,7 +33,7 @@ jobs:
       - name: Apply AutoLife v0.3 handshake delta
         shell: bash
         run: |
-          gzip -dc overrides/v0.3.patch.gz | (cd AutoLife && git apply --whitespace=nowarn -)
+          gzip -dc overrides/v0.3.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
           grep -F "versionName '0.3.0'" AutoLife/app/build.gradle
           grep -F "PHASE 2 HU_STATISTIC_INFO" AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
           grep -F "public static String getString" AutoLife/app/src/main/java/com/autolife/core/ProtoLite.java
