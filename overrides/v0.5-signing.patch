@@ -1,0 +1,23 @@
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -14,7 +14,20 @@
+         versionName '0.5.0'
+     }
+ 
++
++    signingConfigs {
++        debug {
++            storeFile file('autolife-dev.jks')
++            storePassword 'autolife'
++            keyAlias 'autolife'
++            keyPassword 'autolife'
++        }
++    }
++
+     buildTypes {
++        debug {
++            signingConfig signingConfigs.debug
++        }
+         release {
+             minifyEnabled false
+             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
