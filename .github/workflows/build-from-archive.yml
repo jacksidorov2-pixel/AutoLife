@@ -92,6 +92,7 @@ jobs:
       - name: Apply AutoLife v0.7 launch-policy diagnostics
         shell: bash
         run: |
+          printf '\n' >> overrides/v0.7-java.patch
           git apply --directory=AutoLife --whitespace=nowarn overrides/v0.7-java.patch
           sed -i "s/versionCode 8/versionCode 9/; s/versionName '0.6.1'/versionName '0.7.0'/" AutoLife/app/build.gradle
           grep -F "versionName '0.7.0'" AutoLife/app/build.gradle
