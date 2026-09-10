@@ -70,6 +70,7 @@ jobs:
           base64 -d overrides/v0.6.safe.b64 > overrides/v0.6.patch.gz
           gzip -t overrides/v0.6.patch.gz
           gzip -dc overrides/v0.6.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
+          sed -i "s/versionCode 6/versionCode 7/; s/versionName '0.5.1'/versionName '0.6.0'/" AutoLife/app/build.gradle
           grep -F "versionName '0.6.0'" AutoLife/app/build.gradle
           grep -F "H264VirtualDisplayEncoder" AutoLife/app/src/main/java/com/autolife/CarDisplayController.java
           grep -F "setDisplayId" AutoLife/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
