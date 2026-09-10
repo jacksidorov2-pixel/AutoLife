@@ -4,9 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
-    paths:
-      - 'source.b64.part*'
-      - '.github/workflows/build-from-archive.yml'
   pull_request:
     branches: [ main ]
 
@@ -25,6 +22,84 @@ jobs:
           unzip -q AutoLife-0.1-source.zip
           test -f AutoLife/settings.gradle
           test -f AutoLife/app/build.gradle
+
+      - name: Apply AutoLife v0.2 base overrides
+        shell: bash
+        run: |
+          gzip -dc overrides/MainActivity.java.gz > AutoLife/app/src/main/java/com/autolife/MainActivity.java
+          gzip -dc overrides/UsbCarLifeTransport.java.gz > AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
+          gzip -dc overrides/app-build.gradle.gz > AutoLife/app/build.gradle
+
+      - name: Apply AutoLife v0.3 handshake delta
+        shell: bash
+        run: |
+          gzip -dc overrides/v0.3.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
+          grep -F "versionName '0.3.0'" AutoLife/app/build.gradle
+          grep -F "PHASE 2 HU_STATISTIC_INFO" AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
+          grep -F "public static String getString" AutoLife/app/src/main/java/com/autolife/core/ProtoLite.java
+
+      - name: Apply AutoLife v0.4 AOA split write
+        shell: bash
+        run: |
+          patch -d AutoLife -p2 < overrides/v0.4.patch
+          grep -F "versionName '0.4.0'" AutoLife/app/build.gradle
+          grep -F "split=8+" AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
+
+      - name: Apply AutoLife v0.5 car UI
+        shell: bash
+        run: |
+          base64 -d overrides/v0.5.patch.b64 > overrides/v0.5.patch.gz
+          gzip -dc overrides/v0.5.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
+          grep -F "versionName '0.5.0'" AutoLife/app/build.gradle
+          grep -F "TYPE_ACCESSIBILITY_OVERLAY" AutoLife/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
+
+      - name: Configure v0.5.1 stable signing and HyperOS fix
+        shell: bash
+        run: |
+          git apply --directory=AutoLife --whitespace=nowarn overrides/v0.5-signing.patch
+          base64 -d signing/autolife-dev.jks.b64 > AutoLife/app/autolife-dev.jks
+          test -s AutoLife/app/autolife-dev.jks
+          grep -F "versionName '0.5.1'" AutoLife/app/build.gradle
+          grep -F "signingConfig signingConfigs.debug" AutoLife/app/build.gradle
+
+      - name: Apply AutoLife v0.6 independent car display
+        shell: bash
+        run: |
+          cat overrides/v0.6.c00 overrides/v0.6.c01 overrides/v0.6.c02 overrides/v0.6.c03 overrides/v0.6.c04 overrides/v0.6.c05 overrides/v0.6.c06 overrides/v0.6.c07 > overrides/v0.6.safe.b64
+          echo "3e64c5707121b0340e9463d9219cdbe30f43ee111f1b03c9bab8fcee6dcf9b33  overrides/v0.6.safe.b64" | sha256sum -c -
+          base64 -d overrides/v0.6.safe.b64 > overrides/v0.6.patch.gz
+          gzip -t overrides/v0.6.patch.gz
+          gzip -dc overrides/v0.6.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
+          sed -i "s/versionCode 6/versionCode 7/; s/versionName '0.5.1'/versionName '0.6.0'/" AutoLife/app/build.gradle
+          grep -F "versionName '0.6.0'" AutoLife/app/build.gradle
+          grep -F "H264VirtualDisplayEncoder" AutoLife/app/src/main/java/com/autolife/CarDisplayController.java
+          grep -F "setDisplayId" AutoLife/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
+          grep -F "signingConfig signingConfigs.debug" AutoLife/app/build.gradle
+
+      - name: Apply AutoLife v0.6.1 Presentation fix
+        shell: bash
+        run: |
+          base64 -d overrides/v0.6.1.patch.gz.b64 > overrides/v0.6.1.patch.gz
+          gzip -t overrides/v0.6.1.patch.gz
+          gzip -dc overrides/v0.6.1.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
+          cp overrides/CarUiPresentation.java AutoLife/app/src/main/java/com/autolife/CarUiPresentation.java
+          sed -i "s/versionCode 7/versionCode 8/; s/versionName '0.6.0'/versionName '0.6.1'/" AutoLife/app/build.gradle
+          grep -F "versionName '0.6.1'" AutoLife/app/build.gradle
+          grep -F "CarUiPresentation" AutoLife/app/src/main/java/com/autolife/CarDisplayController.java
+          test -s AutoLife/app/src/main/java/com/autolife/CarUiPresentation.java
+          grep -F "VIRTUAL_DISPLAY_FLAG_PRESENTATION" AutoLife/app/src/main/java/com/autolife/core/H264VirtualDisplayEncoder.java
+
+      - name: Apply AutoLife v0.7 launch-policy diagnostics
+        shell: bash
+        run: |
+          printf '\n' >> overrides/v0.7-java.patch
+          git apply --directory=AutoLife --whitespace=nowarn overrides/v0.7-java.patch
+          git apply --directory=AutoLife --whitespace=nowarn overrides/v0.7-compilefix.patch
+          sed -i "s/versionCode 8/versionCode 9/; s/versionName '0.6.1'/versionName '0.7.0'/" AutoLife/app/build.gradle
+          grep -F "versionName '0.7.0'" AutoLife/app/build.gradle
+          grep -F "isActivityStartAllowedOnDisplay" AutoLife/app/src/main/java/com/autolife/CarDisplayController.java
+          grep -F "MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS" AutoLife/app/src/main/java/com/autolife/CarDisplayController.java
+          grep -F "onAccessibilityWindowEvent" AutoLife/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -54,12 +129,13 @@ jobs:
         shell: bash
         run: |
           test -s AutoLife/app/build/outputs/apk/debug/app-debug.apk
+          unzip -t AutoLife/app/build/outputs/apk/debug/app-debug.apk >/dev/null
           ls -lh AutoLife/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AutoLife-debug-apk
+          name: AutoLife-v0.7-debug-apk
           path: AutoLife/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

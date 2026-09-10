@@ -1,0 +1,95 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index 595009d..0b73b4d 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -10,11 +10,23 @@ android {
+         applicationId 'com.autolife'
+         minSdk 29
+         targetSdk 36
+-        versionCode 5
+-        versionName '0.5.0'
++        versionCode 6
++        versionName '0.5.1'
++    }
++
++    signingConfigs {
++        debug {
++            storeFile file('autolife-dev.jks')
++            storePassword 'autolife'
++            keyAlias 'autolife'
++            keyPassword 'autolife'
++        }
+     }
+ 
+     buildTypes {
++        debug {
++            signingConfig signingConfigs.debug
++        }
+         release {
+             minifyEnabled false
+             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+diff --git a/app/src/main/java/com/autolife/MainActivity.java b/app/src/main/java/com/autolife/MainActivity.java
+index 76f231c..aa8e618 100644
+--- a/app/src/main/java/com/autolife/MainActivity.java
++++ b/app/src/main/java/com/autolife/MainActivity.java
+@@ -136,13 +136,14 @@ public class MainActivity extends Activity {
+         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+         getWindow().setStatusBarColor(Color.BLACK);
+         getWindow().setNavigationBarColor(Color.BLACK);
+-        enterImmersive();
++        // Apply immersive mode only after the decor/content is attached.
+ 
+         usbManager = (UsbManager) getSystemService(USB_SERVICE);
+         transport = ((AutoLifeApp) getApplication()).getTransport();
+         transport.addListener(transportListener);
+ 
+         buildCarUi();
++        getWindow().getDecorView().post(this::enterImmersive);
+         registerUsbReceiver();
+         refreshTrace();
+         refreshStateChips();
+@@ -570,24 +571,35 @@ public class MainActivity extends Activity {
+     }
+ 
+     private void enterImmersive() {
++        final View decor = getWindow().getDecorView();
++        if (decor == null) return;
++
+         if (Build.VERSION.SDK_INT >= 30) {
+-            WindowInsetsController controller = getWindow().getInsetsController();
++            WindowInsetsController controller = decor.getWindowInsetsController();
+             if (controller != null) {
+                 controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                 controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
++            } else {
++                applyLegacyImmersive(decor);
++                decor.postDelayed(this::enterImmersive, 100L);
+             }
+         } else {
+-            getWindow().getDecorView().setSystemUiVisibility(
+-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+-                            View.SYSTEM_UI_FLAG_FULLSCREEN |
+-                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+-                            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+-                            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+-                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+-            );
++            applyLegacyImmersive(decor);
+         }
+     }
+ 
++    @SuppressWarnings("deprecation")
++    private void applyLegacyImmersive(View decor) {
++        decor.setSystemUiVisibility(
++                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
++                        View.SYSTEM_UI_FLAG_FULLSCREEN |
++                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
++                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
++                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
++                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
++        );
++    }
++
+     private int dp(int value) {
+         return Math.round(value * getResources().getDisplayMetrics().density);
+     }

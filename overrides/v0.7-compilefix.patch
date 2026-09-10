@@ -1,0 +1,12 @@
+diff --git a/app/src/main/java/com/autolife/CarDisplayController.java b/app/src/main/java/com/autolife/CarDisplayController.java
+--- a/app/src/main/java/com/autolife/CarDisplayController.java
++++ b/app/src/main/java/com/autolife/CarDisplayController.java
+@@ -160,7 +160,7 @@ public final class CarDisplayController {
+         ResolveInfo resolved = pm.resolveActivity(base, PackageManager.MATCH_DEFAULT_ONLY);
+         ActivityInfo ai = resolved == null ? null : resolved.activityInfo;
+         String activityName = ai == null ? "?" : shortName(ai.name);
+-        boolean allowEmbedded = ai != null && (ai.flags & ActivityInfo.FLAG_ALLOW_EMBEDDED) != 0;
++        boolean allowEmbedded = ai != null && (ai.flags & 0x80000000) != 0;
+         boolean multiDisplay = pm.hasSystemFeature(PackageManager.FEATURE_ACTIVITIES_ON_SECONDARY_DISPLAYS);
+         boolean embeddingPermission = appContext.checkSelfPermission("android.permission.ACTIVITY_EMBEDDING")
+                 == PackageManager.PERMISSION_GRANTED;
