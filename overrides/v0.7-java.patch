@@ -1,0 +1,381 @@
+diff --git a/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java b/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
+index 4e64c3a..6b082ac 100644
+--- a/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
++++ b/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
+@@ -51,7 +51,18 @@ public class AutoLifeAccessibilityService extends AccessibilityService {
+         if (carModeRequested) showCarDock(requestedDockDisplayId);
+     }
+ 
+-    @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
++    @Override
++    public void onAccessibilityEvent(AccessibilityEvent event) {
++        if (event == null) return;
++        int type = event.getEventType();
++        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
++                && type != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
++        try {
++            getController().onAccessibilityWindowEvent(event.getPackageName(), event.getDisplayId());
++        } catch (Exception e) {
++            Log.w(TAG, "Unable to process accessibility window event", e);
++        }
++    }
+     @Override public void onInterrupt() {}
+ 
+     @Override
+diff --git a/app/src/main/java/com/autolife/CarDisplayController.java b/app/src/main/java/com/autolife/CarDisplayController.java
+index 4df6ad4..63cd9c7 100644
+--- a/app/src/main/java/com/autolife/CarDisplayController.java
++++ b/app/src/main/java/com/autolife/CarDisplayController.java
+@@ -1,11 +1,17 @@
+ package com.autolife;
+ 
++import android.app.ActivityManager;
+ import android.app.ActivityOptions;
++import android.app.PendingIntent;
+ import android.content.Context;
+ import android.content.Intent;
++import android.content.pm.ActivityInfo;
+ import android.content.pm.PackageManager;
++import android.content.pm.ResolveInfo;
++import android.os.Build;
+ import android.os.Handler;
+ import android.os.Looper;
++import android.os.SystemClock;
+ import android.util.Log;
+ import android.view.Display;
+ 
+@@ -16,6 +22,7 @@ import com.autolife.core.UsbCarLifeTransport;
+ public final class CarDisplayController {
+     private static final String TAG = "AutoLife";
+     private static final int CAR_DENSITY_DPI = 160;
++    private static final long LAUNCH_VERIFY_TIMEOUT_MS = 1800L;
+ 
+     private final Context appContext;
+     private final UsbCarLifeTransport transport;
+@@ -28,6 +35,11 @@ public final class CarDisplayController {
+     private volatile int height = 720;
+     private volatile boolean active;
+ 
++    private volatile String pendingPackage;
++    private volatile String pendingTitle;
++    private volatile long pendingLaunchSerial;
++    private volatile String pendingLaunchSummary;
++
+     public CarDisplayController(Context context, UsbCarLifeTransport transport) {
+         this.appContext = context.getApplicationContext();
+         this.transport = transport;
+@@ -56,8 +68,7 @@ public final class CarDisplayController {
+             active = true;
+             Log.i(TAG, "Car display controller active displayId=" + displayId);
+ 
+-            // HyperOS blocks launching an Activity onto this display. A Presentation window
+-            // is the supported same-process route and is attached after WindowManager publishes it.
++            // Same-process Presentation is reliable on HyperOS even when normal Activity launch is blocked.
+             mainHandler.postDelayed(this::showHome, 180L);
+             return true;
+         } catch (Exception e) {
+@@ -69,6 +80,10 @@ public final class CarDisplayController {
+ 
+     public synchronized void stop() {
+         active = false;
++        pendingPackage = null;
++        pendingTitle = null;
++        pendingLaunchSummary = null;
++        pendingLaunchSerial++;
+         AutoLifeAccessibilityService.setCarMode(false, Display.INVALID_DISPLAY);
+         CarUiPresentation old = presentation;
+         presentation = null;
+@@ -89,13 +104,17 @@ public final class CarDisplayController {
+     public int getHeight() { return height; }
+ 
+     public void showHome() {
++        showHomeWithStatus(null);
++    }
++
++    public void showHomeWithStatus(String status) {
+         if (!active || encoder == null) return;
+         mainHandler.post(() -> {
+             try {
+                 Display display = encoder == null ? null : encoder.getDisplay();
+                 if (display == null || !display.isValid()) {
+                     Log.w(TAG, "Car Presentation waiting for a valid display");
+-                    mainHandler.postDelayed(this::showHome, 150L);
++                    mainHandler.postDelayed(() -> showHomeWithStatus(status), 150L);
+                     return;
+                 }
+                 if (presentation == null || !presentation.isShowing()) {
+@@ -103,9 +122,8 @@ public final class CarDisplayController {
+                     presentation.setOnDismissListener(dialog -> presentation = null);
+                     presentation.show();
+                     Log.i(TAG, "Car Presentation shown on displayId=" + display.getDisplayId());
+-                } else {
+-                    presentation.setStatus("Car UI • Presentation active");
+                 }
++                presentation.setStatus(status == null ? "Car UI • Presentation active" : status);
+                 AutoLifeAccessibilityService.setCarMode(false, display.getDisplayId());
+             } catch (Exception e) {
+                 Log.e(TAG, "Unable to show AutoLife Presentation on car display", e);
+@@ -113,23 +131,185 @@ public final class CarDisplayController {
+         });
+     }
+ 
++    /**
++     * Compatibility wrapper used by the accessibility dock. v0.7 keeps it for callers that only
++     * need a yes/no result, while the Car UI uses the detailed variant below.
++     */
+     public boolean launchPackageOnCar(String packageName) {
+-        int target = displayId;
+-        if (!active || target == Display.INVALID_DISPLAY) return false;
++        String report = launchPackageOnCarDetailed(packageName, appContext, packageName);
++        return report.startsWith("START ");
++    }
++
++    /**
++     * Tries several public Android launch paths and returns a short diagnostic string for the HU.
++     * This intentionally does not use hidden/system permissions. Android may reject cross-UID
++     * activities on app-owned virtual displays; the preflight result makes that visible.
++     */
++    @SuppressWarnings("deprecation")
++    public String launchPackageOnCarDetailed(String packageName, Context sourceContext, String title) {
++        final int target = displayId;
++        if (!active || target == Display.INVALID_DISPLAY || encoder == null) {
++            return "DENY • Car display не активен";
++        }
++
++        Context source = sourceContext == null ? appContext : sourceContext;
++        PackageManager pm = appContext.getPackageManager();
++        Intent base = pm.getLaunchIntentForPackage(packageName);
++        if (base == null) return "DENY • приложение не найдено";
++
++        ResolveInfo resolved = pm.resolveActivity(base, PackageManager.MATCH_DEFAULT_ONLY);
++        ActivityInfo ai = resolved == null ? null : resolved.activityInfo;
++        String activityName = ai == null ? "?" : shortName(ai.name);
++        boolean allowEmbedded = ai != null && (ai.flags & ActivityInfo.FLAG_ALLOW_EMBEDDED) != 0;
++        boolean multiDisplay = pm.hasSystemFeature(PackageManager.FEATURE_ACTIVITIES_ON_SECONDARY_DISPLAYS);
++        boolean embeddingPermission = appContext.checkSelfPermission("android.permission.ACTIVITY_EMBEDDING")
++                == PackageManager.PERMISSION_GRANTED;
++
++        Display display = encoder.getDisplay();
++        int displayFlags = display == null ? 0 : display.getFlags();
++        boolean displayPrivate = (displayFlags & Display.FLAG_PRIVATE) != 0;
++        boolean displayPresentation = (displayFlags & Display.FLAG_PRESENTATION) != 0;
++
++        ActivityManager am = (ActivityManager) appContext.getSystemService(Context.ACTIVITY_SERVICE);
++        boolean allowed = false;
++        String preflightError = null;
++        if (Build.VERSION.SDK_INT >= 29 && am != null) {
++            try {
++                allowed = am.isActivityStartAllowedOnDisplay(source, target, base);
++            } catch (Throwable e) {
++                preflightError = simpleError(e);
++            }
++        }
++
++        String policy = "policy=" + (allowed ? "ALLOW" : "DENY")
++                + " emb=" + (allowEmbedded ? "yes" : "no")
++                + "/perm=" + (embeddingPermission ? "yes" : "no")
++                + " multi=" + (multiDisplay ? "yes" : "no")
++                + " disp=" + (displayPrivate ? "private" : "public")
++                + (displayPresentation ? "+presentation" : "")
++                + " act=" + activityName;
++        if (preflightError != null) policy += " preflight=" + preflightError;
++        Log.i(TAG, "Launch preflight " + packageName + " -> " + policy);
++
++        if (!multiDisplay) {
++            return "DENY • Android без secondary activities • " + policy;
++        }
++
++        // Do not reuse the existing task from the physical display. MULTIPLE_TASK is deliberate:
++        // otherwise REORDER_TO_FRONT can simply bring an already-running phone task forward.
++        Intent launch = new Intent(base);
++        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
++                | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
++                | Intent.FLAG_ACTIVITY_NO_ANIMATION);
++
++        StringBuilder errors = new StringBuilder();
++
++        // Strategy A: launch from the Presentation/display-aware context with explicit display ID.
+         try {
+-            PackageManager pm = appContext.getPackageManager();
+-            Intent launch = pm.getLaunchIntentForPackage(packageName);
+-            if (launch == null) return false;
+-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+-            ActivityOptions options = ActivityOptions.makeBasic();
+-            options.setLaunchDisplayId(target);
+-            appContext.startActivity(launch, options.toBundle());
+-            mainHandler.postDelayed(() -> AutoLifeAccessibilityService.setCarMode(true, target), 250L);
+-            return true;
+-        } catch (Exception e) {
+-            Log.e(TAG, "Unable to launch " + packageName + " on car display", e);
+-            return false;
++            ActivityOptions options = carActivityOptions(target);
++            source.startActivity(new Intent(launch), options.toBundle());
++            armLaunchVerification(packageName, title, "A/context", policy);
++            return "START A/context • " + policy;
++        } catch (Throwable e) {
++            appendError(errors, "A", e);
++            Log.w(TAG, "Launch strategy A failed for " + packageName, e);
++        }
++
++        // Strategy B: create an explicit display Context and retry. Some OEMs treat the source
++        // display context differently from an application context even with identical options.
++        try {
++            Display targetDisplay = encoder.getDisplay();
++            if (targetDisplay != null) {
++                Context displayContext = appContext.createDisplayContext(targetDisplay);
++                ActivityOptions options = carActivityOptions(target);
++                displayContext.startActivity(new Intent(launch), options.toBundle());
++                armLaunchVerification(packageName, title, "B/displayContext", policy);
++                return "START B/displayContext • " + policy;
++            }
++        } catch (Throwable e) {
++            appendError(errors, "B", e);
++            Log.w(TAG, "Launch strategy B failed for " + packageName, e);
++        }
++
++        // Strategy C: PendingIntent path. On Android 14+ we explicitly grant the sender a
++        // background-start mode. This can solve BAL restrictions, but cannot bypass display
++        // security policy; the result tells us which class of restriction we are hitting.
++        try {
++            int requestCode = 0xA710 ^ packageName.hashCode();
++            PendingIntent pi = PendingIntent.getActivity(
++                    appContext,
++                    requestCode,
++                    new Intent(launch),
++                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
++            );
++            ActivityOptions options = carActivityOptions(target);
++            if (Build.VERSION.SDK_INT >= 34) {
++                options.setPendingIntentBackgroundActivityStartMode(
++                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS);
++            }
++            pi.send(source, 0, null, null, null, null, options.toBundle());
++            armLaunchVerification(packageName, title, "C/pendingIntent", policy);
++            return "START C/pendingIntent • " + policy;
++        } catch (Throwable e) {
++            appendError(errors, "C", e);
++            Log.w(TAG, "Launch strategy C failed for " + packageName, e);
++        }
++
++        String tail = errors.length() == 0 ? "no launch path" : errors.toString();
++        return "DENY • " + policy + " • " + tail;
++    }
++
++    private ActivityOptions carActivityOptions(int target) {
++        ActivityOptions options = ActivityOptions.makeBasic();
++        options.setLaunchDisplayId(target);
++        return options;
++    }
++
++    private void armLaunchVerification(String packageName, String title, String strategy, String policy) {
++        long serial = ++pendingLaunchSerial;
++        pendingPackage = packageName;
++        pendingTitle = title;
++        pendingLaunchSummary = strategy + " • " + policy;
++
++        CarUiPresentation old = presentation;
++        presentation = null;
++        if (old != null) {
++            mainHandler.post(() -> { try { old.dismiss(); } catch (Exception ignored) {} });
++        }
++
++        mainHandler.postDelayed(() -> {
++            if (serial != pendingLaunchSerial || !packageName.equals(pendingPackage)) return;
++            pendingPackage = null;
++            String message = title + ": start принят, но окна на Mazda нет • " + pendingLaunchSummary;
++            Log.w(TAG, message);
++            showHomeWithStatus(message);
++        }, LAUNCH_VERIFY_TIMEOUT_MS);
++    }
++
++    /** Called by the enabled AccessibilityService so we can verify where the target window landed. */
++    public void onAccessibilityWindowEvent(CharSequence packageName, int eventDisplayId) {
++        String expected = pendingPackage;
++        if (expected == null || packageName == null || !expected.contentEquals(packageName)) return;
++
++        final long serial = ++pendingLaunchSerial;
++        final String title = pendingTitle == null ? expected : pendingTitle;
++        final String summary = pendingLaunchSummary == null ? "" : pendingLaunchSummary;
++        pendingPackage = null;
++        pendingTitle = null;
++        pendingLaunchSummary = null;
++
++        if (eventDisplayId == displayId) {
++            Log.i(TAG, "Launch verified on car display: " + expected + " display=" + eventDisplayId);
++            AutoLifeAccessibilityService.setCarMode(true, displayId);
++            return;
+         }
++
++        Log.w(TAG, "Target app landed on display=" + eventDisplayId + " instead of car display=" + displayId);
++        mainHandler.postDelayed(() -> {
++            if (serial != pendingLaunchSerial) return;
++            showHomeWithStatus(title + ": Android открыл на display=" + eventDisplayId
++                    + ", не на Mazda • " + summary);
++        }, 120L);
+     }
+ 
+     public boolean handleHuTouch(int action, int x, int y, int huWidth, int huHeight) {
+@@ -145,4 +325,25 @@ public final class CarDisplayController {
+                 action, x, y, huWidth, huHeight, displayId, width, height);
+         return true;
+     }
++
++    private static void appendError(StringBuilder out, String strategy, Throwable error) {
++        if (out.length() > 0) out.append(" ");
++        out.append(strategy).append("=").append(simpleError(error));
++    }
++
++    private static String simpleError(Throwable error) {
++        if (error == null) return "?";
++        String name = error.getClass().getSimpleName();
++        String msg = error.getMessage();
++        if (msg == null || msg.isBlank()) return name;
++        msg = msg.replace('\n', ' ').replace('\r', ' ').trim();
++        if (msg.length() > 80) msg = msg.substring(0, 80);
++        return name + ":" + msg;
++    }
++
++    private static String shortName(String name) {
++        if (name == null) return "?";
++        int dot = name.lastIndexOf('.');
++        return dot >= 0 ? name.substring(dot + 1) : name;
++    }
+ }
+diff --git a/app/src/main/java/com/autolife/CarUiPresentation.java b/app/src/main/java/com/autolife/CarUiPresentation.java
+index 10192ce..f4173f0 100644
+--- a/app/src/main/java/com/autolife/CarUiPresentation.java
++++ b/app/src/main/java/com/autolife/CarUiPresentation.java
+@@ -124,9 +124,10 @@ public final class CarUiPresentation extends Presentation {
+         hero.setBackground(rounded(Color.rgb(25, 31, 41), 22));
+         TextView independent = label("●  Телефон независим", 16, Color.rgb(181, 214, 255), true);
+         hero.addView(independent, new LinearLayout.LayoutParams(0, dp(50), 1f));
+-        statusView = label("Car UI • Presentation", 14, Color.rgb(160, 170, 186), false);
++        statusView = label("Car UI • Presentation", 12, Color.rgb(160, 170, 186), false);
++        statusView.setMaxLines(2);
+         statusView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+-        hero.addView(statusView, new LinearLayout.LayoutParams(dp(380), dp(50)));
++        hero.addView(statusView, new LinearLayout.LayoutParams(dp(610), dp(50)));
+         LinearLayout.LayoutParams heroLp = new LinearLayout.LayoutParams(
+                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+         heroLp.topMargin = dp(18);
+@@ -152,7 +153,7 @@ public final class CarUiPresentation extends Presentation {
+         TextView hint = label("Car UI рисуется внутри AutoLife и не зависит от экрана телефона", 14,
+                 Color.rgb(150, 160, 174), false);
+         footer.addView(hint, new LinearLayout.LayoutParams(0, dp(52), 1f));
+-        TextView badge = label("AutoLife 0.6.1", 14, Color.rgb(183, 191, 204), true);
++        TextView badge = label("AutoLife 0.7", 14, Color.rgb(183, 191, 204), true);
+         badge.setGravity(Gravity.CENTER);
+         badge.setBackground(rounded(Color.rgb(35, 41, 51), 16));
+         footer.addView(badge, new LinearLayout.LayoutParams(dp(170), dp(46)));
+@@ -165,8 +166,9 @@ public final class CarUiPresentation extends Presentation {
+     }
+ 
+     private void openApp(String pkg, String title) {
+-        boolean ok = controller.launchPackageOnCar(pkg);
+-        setStatus(ok ? title + " запускается…" : title + ": HyperOS запретил secondary display");
++        setStatus(title + ": проверка Android policy…");
++        String report = controller.launchPackageOnCarDetailed(pkg, getContext(), title);
++        setStatus(title + ": " + report);
+     }
+ 
+     private View appCard(String packageName, String title, String type, String actionText) {
