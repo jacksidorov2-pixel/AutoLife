@@ -53,13 +53,20 @@ jobs:
           grep -F "versionName '0.5.0'" AutoLife/app/build.gradle
           grep -F "TYPE_ACCESSIBILITY_OVERLAY" AutoLife/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
 
+      - name: Configure v0.5.1 stable signing and HyperOS fix
+        shell: bash
+        run: |
+          git apply --directory=AutoLife --whitespace=nowarn overrides/v0.5-signing.patch
+          base64 -d signing/autolife-dev.jks.b64 > AutoLife/app/autolife-dev.jks
+          test -s AutoLife/app/autolife-dev.jks
+          grep -F "versionName '0.5.1'" AutoLife/app/build.gradle
+          grep -F "signingConfig signingConfigs.debug" AutoLife/app/build.gradle
+
       - name: Apply AutoLife v0.6 independent car display
         shell: bash
         run: |
           base64 -d overrides/v0.6.patch.gz.b64 > overrides/v0.6.patch.gz
           gzip -dc overrides/v0.6.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
-          base64 -d signing/autolife-dev.jks.b64 > AutoLife/app/autolife-dev.jks
-          test -s AutoLife/app/autolife-dev.jks
           grep -F "versionName '0.6.0'" AutoLife/app/build.gradle
           grep -F "H264VirtualDisplayEncoder" AutoLife/app/src/main/java/com/autolife/CarDisplayController.java
           grep -F "setDisplayId" AutoLife/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
