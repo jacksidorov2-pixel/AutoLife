@@ -82,9 +82,11 @@ jobs:
           base64 -d overrides/v0.6.1.patch.gz.b64 > overrides/v0.6.1.patch.gz
           gzip -t overrides/v0.6.1.patch.gz
           gzip -dc overrides/v0.6.1.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
+          cp overrides/CarUiPresentation.java AutoLife/app/src/main/java/com/autolife/CarUiPresentation.java
           sed -i "s/versionCode 7/versionCode 8/; s/versionName '0.6.0'/versionName '0.6.1'/" AutoLife/app/build.gradle
           grep -F "versionName '0.6.1'" AutoLife/app/build.gradle
           grep -F "CarUiPresentation" AutoLife/app/src/main/java/com/autolife/CarDisplayController.java
+          test -s AutoLife/app/src/main/java/com/autolife/CarUiPresentation.java
           grep -F "VIRTUAL_DISPLAY_FLAG_PRESENTATION" AutoLife/app/src/main/java/com/autolife/core/H264VirtualDisplayEncoder.java
 
       - name: Set up JDK 17
