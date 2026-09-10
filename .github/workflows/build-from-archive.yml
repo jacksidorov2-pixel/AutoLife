@@ -23,14 +23,21 @@ jobs:
           test -f AutoLife/settings.gradle
           test -f AutoLife/app/build.gradle
 
-      - name: Apply AutoLife v0.2 overrides
+      - name: Apply AutoLife v0.2 base overrides
         shell: bash
         run: |
           gzip -dc overrides/MainActivity.java.gz > AutoLife/app/src/main/java/com/autolife/MainActivity.java
           gzip -dc overrides/UsbCarLifeTransport.java.gz > AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
           gzip -dc overrides/app-build.gradle.gz > AutoLife/app/build.gradle
           grep -q "versionName '0.2.0'" AutoLife/app/build.gradle
-          grep -q "field 22 is CarLife's authentication token" AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
+
+      - name: Apply AutoLife v0.3 handshake delta
+        shell: bash
+        run: |
+          gzip -dc overrides/v0.3.patch.gz | (cd AutoLife && git apply --whitespace=nowarn -)
+          grep -q "versionName '0.3.0'" AutoLife/app/build.gradle
+          grep -q "PHASE 2 HU_STATISTIC_INFO" AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
+          grep -q "getString(byte\[\] data" AutoLife/app/src/main/java/com/autolife/core/ProtoLite.java
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -60,12 +67,13 @@ jobs:
         shell: bash
         run: |
           test -s AutoLife/app/build/outputs/apk/debug/app-debug.apk
+          unzip -t AutoLife/app/build/outputs/apk/debug/app-debug.apk >/dev/null
           ls -lh AutoLife/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AutoLife-v0.2-debug-apk
+          name: AutoLife-v0.3-debug-apk
           path: AutoLife/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
