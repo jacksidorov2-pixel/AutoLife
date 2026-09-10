@@ -65,7 +65,10 @@ jobs:
       - name: Apply AutoLife v0.6 independent car display
         shell: bash
         run: |
-          base64 -d overrides/v0.6.patch.gz.b64 > overrides/v0.6.patch.gz
+          cat overrides/v0.6.c00 overrides/v0.6.c01 overrides/v0.6.c02 overrides/v0.6.c03 overrides/v0.6.c04 overrides/v0.6.c05 overrides/v0.6.c06 overrides/v0.6.c07 > overrides/v0.6.safe.b64
+          echo "3e64c5707121b0340e9463d9219cdbe30f43ee111f1b03c9bab8fcee6dcf9b33  overrides/v0.6.safe.b64" | sha256sum -c -
+          base64 -d overrides/v0.6.safe.b64 > overrides/v0.6.patch.gz
+          gzip -t overrides/v0.6.patch.gz
           gzip -dc overrides/v0.6.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
           grep -F "versionName '0.6.0'" AutoLife/app/build.gradle
           grep -F "H264VirtualDisplayEncoder" AutoLife/app/src/main/java/com/autolife/CarDisplayController.java
