@@ -45,6 +45,15 @@ jobs:
           grep -F "versionName '0.4.0'" AutoLife/app/build.gradle
           grep -F "split=8+" AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
 
+      - name: Apply AutoLife v0.5 car UI
+        shell: bash
+        run: |
+          base64 -d overrides/v0.5.patch.b64 > overrides/v0.5.patch.gz
+          gzip -dc overrides/v0.5.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
+          grep -F "versionName '0.5.0'" AutoLife/app/build.gradle
+          grep -F "TYPE_ACCESSIBILITY_OVERLAY" AutoLife/app/src/main/java/com/autolife/AutoLifeAccessibilityService.java
+          grep -F "Автомобильный интерфейс" AutoLife/app/src/main/java/com/autolife/MainActivity.java
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -79,7 +88,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AutoLife-v0.4-debug-apk
+          name: AutoLife-v0.5-debug-apk
           path: AutoLife/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
