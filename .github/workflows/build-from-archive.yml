@@ -92,9 +92,7 @@ jobs:
       - name: Apply AutoLife v0.7 launch-policy diagnostics
         shell: bash
         run: |
-          base64 -d overrides/v0.7b.patch.gz.b64 > overrides/v0.7b.patch.gz
-          gzip -t overrides/v0.7b.patch.gz
-          gzip -dc overrides/v0.7b.patch.gz | git apply --directory=AutoLife --whitespace=nowarn -
+          git apply --directory=AutoLife --whitespace=nowarn overrides/v0.7-java.patch
           sed -i "s/versionCode 8/versionCode 9/; s/versionName '0.6.1'/versionName '0.7.0'/" AutoLife/app/build.gradle
           grep -F "versionName '0.7.0'" AutoLife/app/build.gradle
           grep -F "isActivityStartAllowedOnDisplay" AutoLife/app/src/main/java/com/autolife/CarDisplayController.java
