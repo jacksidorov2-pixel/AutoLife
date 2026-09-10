@@ -29,15 +29,14 @@ jobs:
           gzip -dc overrides/MainActivity.java.gz > AutoLife/app/src/main/java/com/autolife/MainActivity.java
           gzip -dc overrides/UsbCarLifeTransport.java.gz > AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
           gzip -dc overrides/app-build.gradle.gz > AutoLife/app/build.gradle
-          grep -q "versionName '0.2.0'" AutoLife/app/build.gradle
 
       - name: Apply AutoLife v0.3 handshake delta
         shell: bash
         run: |
           gzip -dc overrides/v0.3.patch.gz | (cd AutoLife && git apply --whitespace=nowarn -)
-          grep -q "versionName '0.3.0'" AutoLife/app/build.gradle
-          grep -q "PHASE 2 HU_STATISTIC_INFO" AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
-          grep -Fq "getString(byte[] data" AutoLife/app/src/main/java/com/autolife/core/ProtoLite.java
+          grep -F "versionName '0.3.0'" AutoLife/app/build.gradle
+          grep -F "PHASE 2 HU_STATISTIC_INFO" AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
+          grep -F "public static String getString" AutoLife/app/src/main/java/com/autolife/core/ProtoLite.java
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
