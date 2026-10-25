@@ -1,0 +1,47 @@
+diff -ruN autolife03/AutoLife/app/build.gradle autolife04/AutoLife/app/build.gradle
+--- autolife03/AutoLife/app/build.gradle	2026-09-10 01:48:46.000000000 +0000
++++ autolife04/AutoLife/app/build.gradle	2026-09-10 05:14:30.188536046 +0000
+@@ -10,8 +10,8 @@
+         applicationId 'com.autolife'
+         minSdk 29
+         targetSdk 36
+-        versionCode 3
+-        versionName '0.3.0'
++        versionCode 4
++        versionName '0.4.0'
+     }
+ 
+     buildTypes {
+diff -ruN autolife03/AutoLife/app/src/main/java/com/autolife/MainActivity.java autolife04/AutoLife/app/src/main/java/com/autolife/MainActivity.java
+--- autolife03/AutoLife/app/src/main/java/com/autolife/MainActivity.java	2026-09-10 01:48:45.000000000 +0000
++++ autolife04/AutoLife/app/src/main/java/com/autolife/MainActivity.java	2026-09-10 05:14:30.188474343 +0000
+@@ -152,7 +152,7 @@
+                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+ 
+         TextView subtitle = new TextView(this);
+-        subtitle.setText("AutoLife v0.3 • Android Auto-like интерфейс поверх штатного Baidu CarLife");
++        subtitle.setText("AutoLife v0.4 • Android Auto-like интерфейс поверх штатного Baidu CarLife");
+         subtitle.setTextColor(Color.rgb(170, 178, 190));
+         subtitle.setTextSize(15);
+         LinearLayout.LayoutParams subtitleLp = new LinearLayout.LayoutParams(
+diff -ruN autolife03/AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java autolife04/AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java
+--- autolife03/AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java	2026-09-10 01:48:44.000000000 +0000
++++ autolife04/AutoLife/app/src/main/java/com/autolife/core/UsbCarLifeTransport.java	2026-09-10 05:14:30.188259720 +0000
+@@ -385,8 +385,16 @@
+         byte[] packet = CarLifeWire.packet(channel, inner);
+         synchronized (writeLock) {
+             try {
+-                out.write(packet);
++                // CarLife AOA does not treat the accessory file descriptor as an
++                // arbitrary byte stream on every head unit. The stock mobile client
++                // emits the 8-byte AOA multiplex header and the CarLife message body
++                // as two separate USB writes/bulk transfers. Some HUs (including the
++                // Mazda KBST unit) wait for that exact transfer boundary.
++                out.write(packet, 0, 8);
+                 out.flush();
++                out.write(packet, 8, inner.length);
++                out.flush();
++                trace("TX outer ch=" + channel + " len=" + inner.length + " split=8+" + inner.length);
+             } catch (IOException e) {
+                 Log.e(TAG, "USB write failed", e);
+                 status("Ошибка записи USB: " + e.getMessage());

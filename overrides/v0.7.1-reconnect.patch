@@ -1,0 +1,45 @@
+--- a/app/src/main/java/com/autolife/MainActivity.java
++++ b/app/src/main/java/com/autolife/MainActivity.java
+@@ -123,7 +123,10 @@
+                 connectAccessory(getAccessory(intent));
+             } else if (UsbManager.ACTION_USB_ACCESSORY_DETACHED.equals(action)) {
+                 transport.close();
+-                setStatus("Mazda отключена");
++                // A new CarLife session needs a fresh H.264 encoder/VirtualDisplay. Keeping the
++                // old surface alive can leave the HU waiting forever for SPS/PPS + an IDR frame.
++                ((AutoLifeApp) getApplication()).getCarDisplayController().stop();
++                setStatus("Mazda отключена • видеосессия сброшена");
+                 refreshStateChips();
+             }
+         }
+@@ -437,17 +440,20 @@
+         }
+ 
+         CarDisplayController carDisplay = ((AutoLifeApp) getApplication()).getCarDisplayController();
+-        if (!carDisplay.isActive()) {
+-            boolean started = carDisplay.start(transport.getHuWidth(), transport.getHuHeight(), transport.getHuFps());
+-            if (!started) {
+-                setStatus("Не удалось создать отдельный дисплей AutoLife");
+-                return;
+-            }
+-            setStatus("Car UI запущен отдельно от экрана телефона");
+-        } else {
+-            carDisplay.showHome();
+-            setStatus("Car UI уже активен");
++
++        // VIDEO_ENCODER_START begins a new decoder session on the HU. Recreate the encoder even
++        // when an old AutoLife display is still marked active, otherwise a reconnect can resume
++        // with only stale P-frames (or no new frame at all) and the Mazda stays black.
++        if (carDisplay.isActive()) {
++            carDisplay.stop();
++        }
++        boolean started = carDisplay.start(
++                transport.getHuWidth(), transport.getHuHeight(), transport.getHuFps());
++        if (!started) {
++            setStatus("Не удалось создать новую видеосессию AutoLife");
++            return;
+         }
++        setStatus("Car UI запущен • новая H.264-сессия");
+         refreshStateChips();
+ 
+         // Video no longer needs MediaProjection. We request it only as an audio-capture token

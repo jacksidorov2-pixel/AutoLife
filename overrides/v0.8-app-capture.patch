@@ -1,0 +1,163 @@
+--- a/app/src/main/java/com/autolife/MainActivity.java
++++ b/app/src/main/java/com/autolife/MainActivity.java
+@@ -47,7 +47,12 @@
+ public class MainActivity extends Activity {
+     private static final int RC_SCREEN_CAPTURE = 5001;
+     private static final int RC_AUDIO = 5002;
++    private static final int RC_APP_CAPTURE = 5003;
+     private static final String ACTION_USB_PERMISSION = "com.autolife.USB_PERMISSION";
++
++    public static final String ACTION_CAPTURE_APP = "com.autolife.action.CAPTURE_APP";
++    public static final String EXTRA_CAPTURE_PACKAGE = "capture_package";
++    public static final String EXTRA_CAPTURE_TITLE = "capture_title";
+ 
+     private UsbManager usbManager;
+     private UsbCarLifeTransport transport;
+@@ -62,6 +67,8 @@
+     private Button developerToggle;
+     private boolean captureRequestPending;
+     private boolean projectionWantedAfterAudio;
++    private String pendingAppCapturePackage;
++    private String pendingAppCaptureTitle;
+     private final Handler clockHandler = new Handler(Looper.getMainLooper());
+ 
+     private final Runnable clockTick = new Runnable() {
+@@ -153,6 +160,8 @@
+         UsbAccessory accessory = getAccessory(getIntent());
+         if (accessory != null) connectAccessory(accessory);
+         else connectFirstAccessory();
++
++        handleAppCaptureIntent(getIntent());
+     }
+ 
+     @Override
+@@ -161,6 +170,7 @@
+         setIntent(intent);
+         UsbAccessory accessory = getAccessory(intent);
+         if (accessory != null) connectAccessory(accessory);
++        handleAppCaptureIntent(intent);
+     }
+ 
+     @Override
+@@ -477,6 +487,38 @@
+     @Override
+     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+         super.onActivityResult(requestCode, resultCode, data);
++
++        if (requestCode == RC_APP_CAPTURE) {
++            captureRequestPending = false;
++            if (resultCode != RESULT_OK || data == null) {
++                setStatus("Захват приложения отменён • Car UI остаётся активен");
++                return;
++            }
++
++            CarDisplayController carDisplay =
++                    ((AutoLifeApp) getApplication()).getCarDisplayController();
++            // Switch the video source only after Android has granted the app-capture token.
++            // Until this point the independent AutoLife Presentation remains visible on Mazda.
++            carDisplay.stop();
++
++            Intent service = new Intent(this, ProjectionService.class)
++                    .setAction(ProjectionService.ACTION_START)
++                    .putExtra(ProjectionService.EXTRA_RESULT_CODE, resultCode)
++                    .putExtra(ProjectionService.EXTRA_RESULT_DATA, data)
++                    .putExtra(ProjectionService.EXTRA_WIDTH, transport.getHuWidth())
++                    .putExtra(ProjectionService.EXTRA_HEIGHT, transport.getHuHeight())
++                    .putExtra(ProjectionService.EXTRA_FPS, transport.getHuFps())
++                    .putExtra(ProjectionService.EXTRA_AUDIO_ONLY, false);
++            startForegroundService(service);
++
++            String title = pendingAppCaptureTitle == null ? "Приложение" : pendingAppCaptureTitle;
++            pendingAppCapturePackage = null;
++            pendingAppCaptureTitle = null;
++            setStatus(title + " • отдельный app-capture отправляется в Mazda");
++            new Handler(Looper.getMainLooper()).postDelayed(this::refreshStateChips, 450L);
++            return;
++        }
++
+         if (requestCode != RC_SCREEN_CAPTURE) return;
+         captureRequestPending = false;
+         if (resultCode != RESULT_OK || data == null) {
+@@ -495,6 +537,42 @@
+         startForegroundService(service);
+         setStatus("Car UI активен • аудиомост включён");
+         new Handler(Looper.getMainLooper()).postDelayed(this::refreshStateChips, 450L);
++    }
++
++    private void handleAppCaptureIntent(Intent intent) {
++        if (intent == null || !ACTION_CAPTURE_APP.equals(intent.getAction())) return;
++
++        String pkg = intent.getStringExtra(EXTRA_CAPTURE_PACKAGE);
++        String title = intent.getStringExtra(EXTRA_CAPTURE_TITLE);
++        if (pkg == null || pkg.isBlank()) return;
++
++        pendingAppCapturePackage = pkg;
++        pendingAppCaptureTitle = (title == null || title.isBlank()) ? pkg : title;
++        setStatus(pendingAppCaptureTitle + " • запускаю на телефоне для app-capture");
++
++        Intent launch = getPackageManager().getLaunchIntentForPackage(pkg);
++        if (launch == null) {
++            setStatus(pendingAppCaptureTitle + " не установлено");
++            pendingAppCapturePackage = null;
++            pendingAppCaptureTitle = null;
++            return;
++        }
++        launch.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
++        startActivity(launch);
++
++        // Android 14+ app-screen sharing is selected by the user in the system consent UI.
++        // We deliberately do not use createConfigForDefaultDisplay(), because that forces
++        // full-screen mirroring. The default chooser offers "one app".
++        new Handler(Looper.getMainLooper()).postDelayed(this::requestAppScreenCapture, 450L);
++    }
++
++    private void requestAppScreenCapture() {
++        if (captureRequestPending || pendingAppCapturePackage == null) return;
++        captureRequestPending = true;
++        MediaProjectionManager manager =
++                (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
++        Intent consent = manager.createScreenCaptureIntent();
++        startActivityForResult(consent, RC_APP_CAPTURE);
+     }
+ 
+     @Override
+--- a/app/src/main/java/com/autolife/CarUiPresentation.java
++++ b/app/src/main/java/com/autolife/CarUiPresentation.java
+@@ -2,6 +2,7 @@
+ 
+ import android.app.Presentation;
+ import android.content.Context;
++import android.content.Intent;
+ import android.graphics.Color;
+ import android.graphics.Typeface;
+ import android.graphics.drawable.Drawable;
+@@ -153,7 +154,7 @@
+         TextView hint = label("Car UI рисуется внутри AutoLife и не зависит от экрана телефона", 14,
+                 Color.rgb(150, 160, 174), false);
+         footer.addView(hint, new LinearLayout.LayoutParams(0, dp(52), 1f));
+-        TextView badge = label("AutoLife 0.7.1", 14, Color.rgb(183, 191, 204), true);
++        TextView badge = label("AutoLife 0.8", 14, Color.rgb(183, 191, 204), true);
+         badge.setGravity(Gravity.CENTER);
+         badge.setBackground(rounded(Color.rgb(35, 41, 51), 16));
+         footer.addView(badge, new LinearLayout.LayoutParams(dp(170), dp(46)));
+@@ -166,9 +167,17 @@
+     }
+ 
+     private void openApp(String pkg, String title) {
+-        setStatus(title + ": проверка Android policy…");
+-        String report = controller.launchPackageOnCarDetailed(pkg, getContext(), title);
+-        setStatus(title + ": " + report);
++        setStatus(title + ": готовлю захват одного приложения • подтвердите на телефоне");
++        Intent request = new Intent(getContext(), MainActivity.class)
++                .setAction(MainActivity.ACTION_CAPTURE_APP)
++                .putExtra(MainActivity.EXTRA_CAPTURE_PACKAGE, pkg)
++                .putExtra(MainActivity.EXTRA_CAPTURE_TITLE, title)
++                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
++        try {
++            getContext().startActivity(request);
++        } catch (Exception e) {
++            setStatus(title + ": не удалось открыть системный app-capture");
++        }
+     }
+ 
+     private View appCard(String packageName, String title, String type, String actionText) {
